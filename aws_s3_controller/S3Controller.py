@@ -139,19 +139,15 @@ def download_files_from_s3(bucket_name, file_folder_bucket=None, file_folder_loc
 
 
 def upload_files_to_s3(bucket_name, file_folder_local):
-    # 로컬 폴더 내의 파일 목록 가져오기
     files = os.listdir(file_folder_local)
     
-    # AWS S3 클라이언트 생성
     s3 = boto3.client('s3')
     
-    # 각 파일을 S3 버킷으로 업로드
     for file_name in files:
         local_file_path = os.path.join(file_folder_local, file_name)
-        s3_key = file_name  # 파일 이름을 S3 키로 사용
+        s3_key = file_name  
         s3.upload_file(local_file_path, bucket_name, s3_key)
         
-        # 업로드 성공 여부 확인 및 로그 출력
         try:
             s3.head_object(Bucket=bucket_name, Key=s3_key)
             print(f"{file_name} 업로드 완료")
@@ -177,7 +173,6 @@ def scan_files_with_text_in_bucket(bucket_name, text, prefix=''):
             print(f"Files containing '{text}' in their names:")
             for file in files:
                 bucket.append(file)
-                # print(file)
             return bucket
         else:
             print(f"No files containing '{text}' found in the bucket '{bucket_name}' with prefix '{prefix}'")
@@ -217,10 +212,6 @@ def scan_files_in_folder_in_bucket_by_regex(bucket_name, file_folder_bucket, reg
     except Exception as e:
         print(f"An error occurred: {e}")
         return []
-
-# 사용 예제
-# regex = r'your_regex_pattern_here'
-# scan_files_in_subfolder_in_bucket_by_regex('your_bucket_name', 'your_file_folder_bucket', regex)
 
 
 def move_files_between_s3_buckets(source_bucket, source_folder, destination_bucket, destination_folder, regex):
