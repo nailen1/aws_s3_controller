@@ -1,4 +1,4 @@
-# Shining Pebbles
+# AWS S3 Controller
 
 ## Description
 
