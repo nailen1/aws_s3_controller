@@ -3,7 +3,7 @@
 ## Description
 
 - A collection of natural language-like utility functions to intuitively and easily control AWS's cloud object storage resource, S3.
-- Manage, interact with, and handle S3 just like your local storage.
+- Control S3. Manage, interact with, and handle S3 just like your local storage.
 
 *AWS: Amazon Web Services
 *S3: Simple Storage Service in AWS
