@@ -1,28 +1,31 @@
+import pandas as pd
+import os
+import re
+import io
 from shining_pebbles import *
 import boto3
 from botocore.exceptions import NoCredentialsError, PartialCredentialsError
-import re
-import io
-import pandas as pd
 
 
-def scan_files_in_bucket_subfolder_by_regex(bucket_name, file_folder_bucket, regex, option='path'):
+### BASIC FUNCTIONS: S3 Bucket Management Functions ###
+
+def scan_files_in_bucket_by_regex(bucket, bucket_prefix, regex, option='key'):
     s3 = boto3.client('s3')
-    file_folder_bucket_with_slash = file_folder_bucket + '/' if file_folder_bucket[-1] != '/' else file_folder_bucket
+    bucket_prefix_with_slash = bucket_prefix + '/' if bucket_prefix[-1] != '/' else bucket_prefix
     pattern = re.compile(regex)
     try:
         paginator = s3.get_paginator('list_objects_v2')
-        page_iterator = paginator.paginate(Bucket=bucket_name, Prefix=file_folder_bucket_with_slash)
+        page_iterator = paginator.paginate(Bucket=bucket, Prefix=bucket_prefix_with_slash)
         files = []
         for page in page_iterator:
             if 'Contents' in page:
                 for file in page['Contents']:
-                    if pattern.search(file['Key']) and file['Key'] != file_folder_bucket_with_slash:
+                    if pattern.search(file['Key']) and file['Key'] != bucket_prefix_with_slash:
                         files.append(file['Key'])
         if files:
             mapping_option = {
                 'name': [file.split('/')[-1] for file in files],
-                'path': files
+                'key': files
             }
             try:
                 files = mapping_option[option]
@@ -30,13 +33,14 @@ def scan_files_in_bucket_subfolder_by_regex(bucket_name, file_folder_bucket, reg
                 print(f"Invalid option '{option}'. Available options: {', '.join(mapping_option.keys())}")
                 return []
     
-            print(f"Files matching the regex '{regex}' in the bucket '{bucket_name}' with prefix '{file_folder_bucket}':")
+            print(f"Files matching the regex '{regex}' in the bucket '{bucket}' with prefix '{bucket_prefix}':")
             for file in files:
-                print(file)
+                print('-', file)
             return files
         else:
-            print(f"No files matching the regex '{regex}' found in the bucket '{bucket_name}' with prefix '{file_folder_bucket}'")
+            print(f"No files matching the regex '{regex}' found in the bucket '{bucket}' with prefix '{bucket_prefix}'")
             return []
+        
     except NoCredentialsError:
         print("Credentials not available.")
         return []
@@ -47,28 +51,137 @@ def scan_files_in_bucket_subfolder_by_regex(bucket_name, file_folder_bucket, reg
         print(f"An error occurred: {e}")
         return []
 
-def open_df_in_bucket_subfolder(bucket_name, file_folder_bucket=None, file_name=None, file_key=None):
+
+def download_files_from_s3(bucket, regex, file_folder_local, bucket_prefix='', file_subfolder_local=None):
     """
-    S3 버킷의 특정 하위 폴더에서 CSV 파일을 읽어 pandas DataFrame으로 반환합니다.
+    Download files from an S3 bucket to a local folder.
+
+    :param bucket: str. The name of the S3 bucket.
+    :param regex: str. The regex pattern to match the files.
+    :param file_folder_local: str. The local folder to save the files.
+    :param bucket_prefix: str. The prefix of the S3 bucket to scan.
+    :param file_subfolder_local: str. The local subfolder to save the files (optional).
+    """
+    s3 = boto3.client('s3')
+    files_keys = scan_files_in_bucket_by_regex(bucket=bucket, bucket_prefix=bucket_prefix, regex=regex, option='key')
+    print(f'Found {len(files_keys)} files in {bucket} that match the regex pattern.')
+    if not os.path.exists(file_folder_local):
+        os.makedirs(file_folder_local)
+
+    for key in files_keys:
+        print(f'- Downloading {key}...')
+        file_name = key.split('/')[-1]
+        local_path = os.path.join(file_folder_local, file_subfolder_local) if file_subfolder_local else file_folder_local
+        local_file_path = os.path.join(local_path, file_name)
+
+        if not os.path.exists(local_path):
+            os.makedirs(local_path)
+
+        s3.download_file(bucket, key, local_file_path)
+        print(f'- Download {key} to {local_file_path}')
+
+
+
+def upload_files_to_s3(file_folder_local, regex, bucket, bucket_prefix='', file_subfolder_local=None):
+    """
+    Upload files from a local folder to an S3 bucket that match a given regex pattern.
+
+    :param file_folder_local: str. The local folder containing files to upload.
+    :param regex: str. The regex pattern to match the files.
+    :param bucket: str. The name of the S3 bucket.
+    :param bucket_prefix: str. The prefix of the S3 bucket to upload files.
+    :param file_subfolder_local: str. The local subfolder containing files to upload (optional).
+    """
+    s3 = boto3.client('s3')
+    file_folder_local = os.path.join(file_folder_local, file_subfolder_local) if file_subfolder_local else file_folder_local
+    file_paths = scan_files_including_regex(file_folder_local, regex, option='path')
+
+    for file_path in file_paths:
+        file_name = os.path.basename(file_path)
+        s3_key = os.path.join(bucket_prefix, file_name)
+        s3.upload_file(file_path, bucket, s3_key)
+        print(f'Uploaded {file_path} to s3://{bucket}/{s3_key}')
+
+
+import boto3
+import pandas as pd
+import io
+import re
+from botocore.exceptions import NoCredentialsError, PartialCredentialsError
+
+def scan_files_in_bucket_by_regex(bucket, bucket_prefix, regex, option='key'):
+    """
+    Scan files in an S3 bucket that match a given regex pattern.
+
+    :param bucket: str. The name of the S3 bucket.
+    :param bucket_prefix: str. The prefix of the S3 bucket to scan.
+    :param regex: str. The regex pattern to match the files.
+    :param option: str. 'name' to return file names, 'key' to return full paths.
+    :return: list. A list of matching files.
+    """
+    s3 = boto3.client('s3')
+    bucket_prefix_with_slash = bucket_prefix + '/' if bucket_prefix and bucket_prefix[-1] != '/' else bucket_prefix
+    pattern = re.compile(regex)
+    try:
+        paginator = s3.get_paginator('list_objects_v2')
+        page_iterator = paginator.paginate(Bucket=bucket, Prefix=bucket_prefix_with_slash)
+        files = []
+        for page in page_iterator:
+            if 'Contents' in page:
+                for file in page['Contents']:
+                    if pattern.search(file['Key']) and file['Key'] != bucket_prefix_with_slash:
+                        files.append(file['Key'])
+        if files:
+            mapping_option = {
+                'name': [file.split('/')[-1] for file in files],
+                'key': files
+            }
+            try:
+                files = mapping_option[option]
+            except KeyError:
+                print(f"Invalid option '{option}'. Available options: {', '.join(mapping_option.keys())}")
+                return []
+
+            print(f"Files matching the regex '{regex}' in the bucket '{bucket}' with prefix '{bucket_prefix}':")
+            for file in files:
+                print('-', file)
+            return files
+        else:
+            print(f"No files matching the regex '{regex}' found in the bucket '{bucket}' with prefix '{bucket_prefix}'")
+            return []
+
+    except NoCredentialsError:
+        print("Credentials not available.")
+        return []
+    except PartialCredentialsError:
+        print("Incomplete credentials provided.")
+        return []
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return []
+
+def open_df_in_bucket(bucket, bucket_prefix=None, file_name=None, file_key=None):
+    """
+    Read a CSV file from a specific folder in an S3 bucket and return it as a pandas DataFrame.
+
+    :param bucket: str. The name of the S3 bucket.
+    :param bucket_prefix: str. The prefix of the S3 bucket where the file is located.
+    :param file_name: str. The name of the file to read.
+    :param file_key: str. The full key of the file to read.
+    :return: pandas.DataFrame. The DataFrame containing the file data.
+    :raises ValueError: If neither 'file_name' nor 'file_key' is provided.
+    """
+    if file_name is None and file_key is None:
+        raise ValueError("Either 'file_name' or 'file_key' must be provided.")
     
-    :param bucket_name: S3 버킷 이름
-    :param file_folder_bucket: 파일이 위치한 버킷 내 폴더 경로
-    :param file_name: 파일 이름
-    :return: pandas DataFrame
-    """
-    # S3 클라이언트 생성
     s3 = boto3.client('s3')
     
-    # 파일 경로 생성
-    if file_folder_bucket != None and not file_folder_bucket.endswith('/'):
-        file_folder_bucket += '/'
-    file_path = f"{file_folder_bucket}{file_name}" if file_name != None else file_key
+    if bucket_prefix is not None and not bucket_prefix.endswith('/'):
+        bucket_prefix += '/'
+    file_path = f"{bucket_prefix}{file_name}" if file_name is not None else file_key
     
     try:
-        # S3에서 파일 내용 가져오기
-        content = s3.get_object(Bucket=bucket_name, Key=file_path)['Body'].read()
-        
-        # 내용을 DataFrame으로 변환
+        content = s3.get_object(Bucket=bucket, Key=file_path)['Body'].read()        
         df = pd.read_csv(io.BytesIO(content))
         
         print(f"Successfully read file: {file_path}")
@@ -80,190 +193,96 @@ def open_df_in_bucket_subfolder(bucket_name, file_folder_bucket=None, file_name=
         print(f"Error reading file {file_path}: {str(e)}")
         return None
 
+def open_df_in_bucket_by_regex(bucket, bucket_prefix, regex, index=-1):
+    """
+    Read a CSV file from an S3 bucket that matches a given regex pattern and return it as a pandas DataFrame.
 
-def open_df_in_bucket_subfolder_by_regex(bucket_name, file_folder_bucket, regex, index=-1):
-    file_keys = scan_files_in_bucket_subfolder_by_regex(bucket_name, file_folder_bucket, regex, option='path')
+    :param bucket: str. The name of the S3 bucket.
+    :param bucket_prefix: str. The prefix of the S3 bucket to scan.
+    :param regex: str. The regex pattern to match the files.
+    :param index: int. The index of the file to read from the list of matching files.
+    :return: pandas.DataFrame. The DataFrame containing the file data.
+    """
+    file_keys = scan_files_in_bucket_by_regex(bucket=bucket, bucket_prefix=bucket_prefix, regex=regex, option='key')
     file_key = file_keys[index]
-    df = open_df_in_bucket_subfolder(bucket_name, file_key=file_key)
+    df = open_df_in_bucket(bucket, file_key=file_key)
     return df
 
+def relocate_files_between_buckets(source_bucket, target_bucket, regex, source_prefix='', target_prefix='', option='copy'):
+    """
+    Relocate files between S3 buckets based on a regex pattern.
 
-def copy_files_to_another_bucket(source_bucket, destination_bucket, source_prefix, destination_prefix):
-    # S3 클라이언트 초기화
+    :param source_bucket: str. The name of the source S3 bucket.
+    :param target_bucket: str. The name of the target S3 bucket.
+    :param regex: str. The regex pattern to match the files.
+    :param source_prefix: str. The prefix of the source S3 bucket to scan.
+    :param target_prefix: str. The prefix of the target S3 bucket.
+    :param option: str. 'copy' to copy files, 'move' to move files.
+    """
     s3 = boto3.client('s3')
+    files_to_relocate = scan_files_in_bucket_by_regex(source_bucket, source_prefix, regex, option='key')
 
-    try:
-        # 원본 버킷의 프리픽스로 시작하는 파일 목록을 가져옴
-        objects = s3.list_objects_v2(Bucket=source_bucket, Prefix=source_prefix)
-        
-        if 'Contents' in objects:
-            for obj in objects['Contents']:
-                # 파일 이름만 추출 (전체 키에서 프리픽스 제거)
-                file_name = obj['Key'][len(source_prefix):]
-
-                # 목적지의 전체 파일 경로 생성
-                destination_key = destination_prefix + file_name
-                
-                # 파일을 다른 버킷으로 복사
-                copy_source = {'Bucket': source_bucket, 'Key': obj['Key']}
-                s3.copy_object(CopySource=copy_source, Bucket=destination_bucket, Key=destination_key)
-                print(f"File {obj['Key']} copied to {destination_key} in {destination_bucket}")
-        else:
-            print(f"No files found in {source_bucket}/{source_prefix}")
-
-    except NoCredentialsError:
-        print("Credentials not available")
-    except Exception as e:
-        print(e)
-
-def download_files_from_s3(bucket_name, file_folder_bucket=None, file_folder_local=None):
-    file_folder_bucket = file_folder_bucket or ''
-    file_folder_local = file_folder_local or file_folder_bucket
-    s3 = boto3.client('s3')
-    response = s3.list_objects_v2(Bucket=bucket_name, Prefix=file_folder_bucket)
-    files = [file for file in response.get('Contents', []) if not file['Key'].endswith('/')]
-
-    if not files:
-        print(f'No files found in the folder "{file_folder_bucket}" in bucket "{bucket_name}"')
+    if not files_to_relocate:
+        print(f"No files to relocate from bucket '{source_bucket}' with prefix '{source_prefix}'")
         return
 
-    if not os.path.exists(file_folder_local):
-        os.makedirs(file_folder_local)
-
-    for file in files:
-        key = file['Key']
-        file_name = os.path.basename(key)
-        local_file_path = os.path.join(file_folder_local, file_name)
-        s3.download_file(bucket_name, key, local_file_path)
-        print(f'Downloaded file: {file_name}')
-
-
-def upload_files_to_s3(bucket_name, file_folder_local):
-    files = os.listdir(file_folder_local)
-    
-    s3 = boto3.client('s3')
-    
-    for file_name in files:
-        local_file_path = os.path.join(file_folder_local, file_name)
-        s3_key = file_name  
-        s3.upload_file(local_file_path, bucket_name, s3_key)
-        
-        try:
-            s3.head_object(Bucket=bucket_name, Key=s3_key)
-            print(f"{file_name} 업로드 완료")
-        except Exception as e:
-            print(f"{file_name} 업로드 실패: {e}")
-
-def create_subfolder_in_bucket(bucket_name, subfolder_name):
-    if subfolder_name[-1] != '/':
-        subfolder_name += '/'
-    s3 = boto3.resource('s3')
-    s3.Object(bucket_name, subfolder_name).put(Body=b'')
-    print(f"Subfolder '{subfolder_name}' created in bucket '{bucket_name}'.")
-
-
-def scan_files_with_text_in_bucket(bucket_name, text, prefix=''):
-    s3 = boto3.client('s3')
-    try:
-        response = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
-        files = [file['Key'] for file in response.get('Contents', []) if text in file['Key']]
-        
-        bucket = []
-        if files:
-            print(f"Files containing '{text}' in their names:")
-            for file in files:
-                bucket.append(file)
-            return bucket
-        else:
-            print(f"No files containing '{text}' found in the bucket '{bucket_name}' with prefix '{prefix}'")
-    except Exception as e:
-        print(f"An error occurred: {e}")
-
-
-def scan_files_in_folder_in_bucket_by_regex(bucket_name, file_folder_bucket, regex):
-    s3 = boto3.client('s3')
-    pattern = re.compile(regex)
-    try:
-        paginator = s3.get_paginator('list_objects_v2')
-        page_iterator = paginator.paginate(Bucket=bucket_name, Prefix='')
-        
-        files = []
-        
-        for page in page_iterator:
-            if 'Contents' in page:
-                for file in page['Contents']:
-                    if pattern.search(file['Key']):
-                        files.append(file['Key'])
-        
-        if files:
-            print(f"Files matching the regex '{regex}' in the bucket '{bucket_name}' with prefix '{file_folder_bucket}':")
-            for file in files:
-                print(file)
-            return files
-        else:
-            print(f"No files matching the regex '{regex}' found in the bucket '{bucket_name}' with prefix '{file_folder_bucket}'")
-            return []
-    except NoCredentialsError:
-        print("Credentials not available.")
-        return []
-    except PartialCredentialsError:
-        print("Incomplete credentials provided.")
-        return []
-    except Exception as e:
-        print(f"An error occurred: {e}")
-        return []
-
-
-def move_files_between_s3_buckets(source_bucket, source_folder, destination_bucket, destination_folder, regex):
-    s3 = boto3.client('s3')
-    response = s3.list_objects_v2(Bucket=source_bucket, Prefix=source_folder)
-    regex = re.compile(regex)
-
-    if 'Contents' not in response:
-        print(f'No files found in the folder "{source_folder}" in bucket "{source_bucket}"')
-        return
-
-    files_to_move = [file['Key'] for file in response['Contents'] if regex.search(file['Key'])]
-    
-    if not files_to_move:
-        print(f'No files matching the pattern "{regex}" found in the folder "{source_folder}"')
-        return
-    
-    for key in files_to_move:
+    for key in files_to_relocate:
         copy_source = {'Bucket': source_bucket, 'Key': key}
-        destination_key = key.replace(source_folder, destination_folder, 1) if source_folder != './' else destination_folder + key
+        target_key = key.replace(source_prefix, target_prefix, 1) if source_prefix else target_prefix + key
 
         try:
             # Copy the file to the destination bucket
-            s3.copy_object(CopySource=copy_source, Bucket=destination_bucket, Key=destination_key)
-            # Delete the file from the source bucket
-            s3.delete_object(Bucket=source_bucket, Key=key)
-            print(f'Moved file: {key} to {destination_key}')
+            s3.copy_object(CopySource=copy_source, Bucket=target_bucket, Key=target_key)
+            print(f'Copied file: {key} to {target_key}')
+            if option == 'move':
+                # Delete the file from the source bucket
+                s3.delete_object(Bucket=source_bucket, Key=key)
+                print(f'Moved file: {key} to {target_key}')
         except Exception as e:
-            print(f'Failed to move file {key}: {e}')
+            print(f'Failed to {option} file {key}: {e}')
+
+def copy_files_including_regex_between_s3_buckets(source_bucket, target_bucket, regex, source_prefix='', target_prefix=''):
+    """
+    Copy files between S3 buckets based on a regex pattern.
+
+    :param source_bucket: str. The name of the source S3 bucket.
+    :param target_bucket: str. The name of the target S3 bucket.
+    :param regex: str. The regex pattern to match the files.
+    :param source_prefix: str. The prefix of the source S3 bucket to scan.
+    :param target_prefix: str. The prefix of the target S3 bucket.
+    """
+    relocate_files_between_buckets(source_bucket, target_bucket, regex, source_prefix, target_prefix, option='copy')
+    return None
+
+def move_files_including_regex_between_s3_buckets(source_bucket, target_bucket, regex, source_prefix='', target_prefix=''):
+    """
+    Move files between S3 buckets based on a regex pattern.
+
+    :param source_bucket: str. The name of the source S3 bucket.
+    :param target_bucket: str. The name of the target S3 bucket.
+    :param regex: str. The regex pattern to match the files.
+    :param source_prefix: str. The prefix of the source S3 bucket to scan.
+    :param target_prefix: str. The prefix of the target S3 bucket.
+    """
+    relocate_files_between_buckets(source_bucket, target_bucket, regex, source_prefix, target_prefix, option='move')
+    return None
+
+def create_subfolder_in_bucket(bucket, bucket_subfolder):
+    """
+    Create a subfolder in an S3 bucket.
+
+    :param bucket: str. The name of the S3 bucket.
+    :param bucket_subfolder: str. The name of the subfolder to create.
+    """
+    if bucket_subfolder[-1] != '/':
+        bucket_subfolder += '/'
+    s3 = boto3.resource('s3')
+    s3.Object(bucket, bucket_subfolder).put(Body=b'')
+    print(f"Subfolder '{bucket_subfolder}' created in bucket '{bucket}'.")
+    return None
 
 
-def move_files_to_another_subfolder_in_bucket(bucket_name, files, subfolder_name):
-    s3 = boto3.client('s3')
-    if subfolder_name[-1] != '/':
-        subfolder_name += '/'
-    
-    # Check if the subfolder exists
-    subfolder_exists = s3.list_objects_v2(Bucket=bucket_name, Prefix=subfolder_name, MaxKeys=1)
-    if not subfolder_exists.get('Contents'):
-        raise Exception(f"Subfolder '{subfolder_name}' does not exist in the bucket '{bucket_name}'.")
-
-    for file_key in files:
-        new_key = subfolder_name + os.path.basename(file_key)
-        copy_source = {'Bucket': bucket_name, 'Key': file_key}
-        
-        try:
-            s3.copy_object(CopySource=copy_source, Bucket=bucket_name, Key=new_key)
-            s3.delete_object(Bucket=bucket_name, Key=file_key)
-            print(f"Moved {file_key} to {new_key}")
-        except Exception as e:
-            print(f"Failed to move {file_key} to {new_key}: {e}")
-
+### SPECIAL USECASE FUNCTIONS: Timeseries Data Processing Functions ###
 
 def merge_timeseries_csv_files(file_path_old, file_path_new, file_name_save=None, file_folder_save=None):
     try:
