@@ -62,8 +62,9 @@ def download_files_from_s3(bucket, regex, file_folder_local, bucket_prefix='', f
     :param bucket_prefix: str. The prefix of the S3 bucket to scan.
     :param file_subfolder_local: str. The local subfolder to save the files (optional).
     """
+    bucket_prefix_with_slash = bucket_prefix + '/' if bucket_prefix[-1] != '/' else bucket_prefix
     s3 = boto3.client('s3')
-    files_keys = scan_files_in_bucket_by_regex(bucket=bucket, bucket_prefix=bucket_prefix, regex=regex, option='key')
+    files_keys = scan_files_in_bucket_by_regex(bucket=bucket, bucket_prefix=bucket_prefix_with_slash, regex=regex, option='key')
     print(f'Found {len(files_keys)} files in {bucket} that match the regex pattern.')
     if not os.path.exists(file_folder_local):
         os.makedirs(file_folder_local)
@@ -95,13 +96,18 @@ def upload_files_to_s3(file_folder_local, regex, bucket, bucket_prefix='', file_
     s3 = boto3.client('s3')
     file_folder_local = os.path.join(file_folder_local, file_subfolder_local) if file_subfolder_local else file_folder_local
     file_paths = scan_files_including_regex(file_folder_local, regex, option='path')
-
+    if file_paths:
+        print(f'Found {len(file_paths)} files in {file_folder_local} that match the regex pattern.')
+    else:
+        print(f'No files found in {file_folder_local} that match the regex pattern.')
+        return 
     for file_path in file_paths:
         file_name = os.path.basename(file_path)
-        s3_key = os.path.join(bucket_prefix, file_name)
+        bucket_prefix_with_slash = bucket_prefix + '/' if bucket_prefix[-1] != '/' else bucket_prefix
+        s3_key = os.path.join(bucket_prefix_with_slash, file_name)
         s3.upload_file(file_path, bucket, s3_key)
         print(f'Uploaded {file_path} to s3://{bucket}/{s3_key}')
-
+    return None
 
 import boto3
 import pandas as pd
@@ -203,7 +209,8 @@ def open_df_in_bucket_by_regex(bucket, bucket_prefix, regex, index=-1):
     :param index: int. The index of the file to read from the list of matching files.
     :return: pandas.DataFrame. The DataFrame containing the file data.
     """
-    file_keys = scan_files_in_bucket_by_regex(bucket=bucket, bucket_prefix=bucket_prefix, regex=regex, option='key')
+    bucket_prefix_with_slash = bucket_prefix + '/' if bucket_prefix[-1] != '/' else bucket_prefix
+    file_keys = scan_files_in_bucket_by_regex(bucket=bucket, bucket_prefix=bucket_prefix_with_slash, regex=regex, option='key')
     file_key = file_keys[index]
     df = open_df_in_bucket(bucket, file_key=file_key)
     return df
@@ -282,8 +289,26 @@ def create_subfolder_in_bucket(bucket, bucket_subfolder):
     return None
 
 
-### SPECIAL USECASE FUNCTIONS: Timeseries Data Processing Functions ###
+### SPECIAL USECASE FUNCTIONS: ###
 
+
+### Maintanace Functions for @rpa ###
+def locate_menu_datasets_from_s3_to_ec2web(menu_code, start_date=None, end_date=None, save_date=None):
+    bucket_name_protocol = 'dataset-system'
+    start_date = start_date or '2020-01-01'
+    end_date = end_date or get_date_n_days_ago(get_today("%Y%m%d"), n=1, format="%Y%m%d")
+    save_date = save_date or get_today("%Y%m%d")
+    regex_menu=f'menu{menu_code}'
+    mapping_menu = {
+        '2160': f"dataset-timeseries-menu2160-from{start_date.replace('-', '')}-to{end_date.replace('-', '')}-save{save_date.replace('-', '')}",
+        '2205': f"dataset-snapshot-menu2205-at{end_date.replace('-', '')}-save{save_date.replace('-', '')}"
+    }
+    bucket_prefix_protocol = mapping_menu[menu_code]
+    download_files_from_s3(bucket=bucket_name_protocol, bucket_prefix=bucket_prefix_protocol, file_folder_local=f'dataset-menu{menu_code}', regex=regex_menu)
+    return None
+
+
+# Timeseries Data Processing Functions #
 def merge_timeseries_csv_files(file_path_old, file_path_new, file_name_save=None, file_folder_save=None):
     try:
         old_data = pd.read_csv(file_path_old, dtype=str)
@@ -313,13 +338,11 @@ def merge_timeseries_csv_files(file_path_old, file_path_new, file_name_save=None
     first_date = combined_data[date_column].iloc[1]
     last_date = combined_data[date_column].iloc[-1]
 
-    # 파일명 형식을 유지하여 새로운 파일명 생성
     old_file_name = os.path.basename(file_path_old)
     base_file_name = old_file_name.split('-to')[0]  # 'menu2160-code100060'
     base_menu_code = base_file_name.split('-')[0]
     file_name_save = file_name_save if file_name_save else f"{base_file_name}-to{last_date.replace('-', '')}-save{get_today('%Y%m%d')}.csv"
 
-    # 저장할 폴더가 지정되지 않은 경우, 현재 폴더에 저장
     if not file_folder_save:
         base_folder_name = f"dataset-timeseries-{base_menu_code}-from{first_date.replace('-', '')}-to{last_date.replace('-', '')}-merge{get_today('%Y%m%d')}"
         file_folder_save = os.path.join('.', base_folder_name)
