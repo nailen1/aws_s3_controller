@@ -1,17 +1,16 @@
+from shining_pebbles import *
+import boto3
+from botocore.exceptions import NoCredentialsError, PartialCredentialsError
 import pandas as pd
 import os
 import re
 import io
-from shining_pebbles import *
-import boto3
-from botocore.exceptions import NoCredentialsError, PartialCredentialsError
-
 
 ### BASIC FUNCTIONS: S3 Bucket Management Functions ###
 
 def scan_files_in_bucket_by_regex(bucket, bucket_prefix, regex, option='key'):
     s3 = boto3.client('s3')
-    bucket_prefix_with_slash = bucket_prefix + '/' if bucket_prefix[-1] != '/' else bucket_prefix
+    bucket_prefix_with_slash = bucket_prefix + '/' if bucket_prefix and bucket_prefix[-1] != '/' else bucket_prefix
     pattern = re.compile(regex)
     try:
         paginator = s3.get_paginator('list_objects_v2')
@@ -62,7 +61,7 @@ def download_files_from_s3(bucket, regex, file_folder_local, bucket_prefix='', f
     :param bucket_prefix: str. The prefix of the S3 bucket to scan.
     :param file_subfolder_local: str. The local subfolder to save the files (optional).
     """
-    bucket_prefix_with_slash = bucket_prefix + '/' if bucket_prefix[-1] != '/' else bucket_prefix
+    bucket_prefix_with_slash = bucket_prefix + '/' if bucket_prefix and bucket_prefix[-1] != '/' else bucket_prefix
     s3 = boto3.client('s3')
     files_keys = scan_files_in_bucket_by_regex(bucket=bucket, bucket_prefix=bucket_prefix_with_slash, regex=regex, option='key')
     print(f'Found {len(files_keys)} files in {bucket} that match the regex pattern.')
@@ -79,92 +78,64 @@ def download_files_from_s3(bucket, regex, file_folder_local, bucket_prefix='', f
             os.makedirs(local_path)
 
         s3.download_file(bucket, key, local_file_path)
-        print(f'- Download {key} to {local_file_path}')
+        print(f'- Save Complete: {local_file_path}')
 
 
+def scan_files_including_regex(file_folder, regex, option="name"):
+    """
+    Scans a folder for files matching a given regex pattern.
 
-def upload_files_to_s3(file_folder_local, regex, bucket, bucket_prefix='', file_subfolder_local=None):
+    Args:
+        file_folder (str): The folder to scan.
+        regex (str): The regex pattern to match.
+        option (str): Whether to return file names ('name') or file paths ('path').
+
+    Returns:
+        list: A sorted list of matching file names or paths.
+    """
+    with os.scandir(file_folder) as files:
+        lst = [file.name for file in files if re.findall(regex, file.name)]
+    mapping = {
+        "name": lst,
+        "path": [os.path.join(file_folder, file_name) for file_name in lst],
+    }
+    lst_ordered = sorted(mapping[option])
+    return lst_ordered
+
+
+def upload_files_to_s3(file_folder_local, regex, bucket, bucket_prefix=None, file_subfolder_local=None):
     """
     Upload files from a local folder to an S3 bucket that match a given regex pattern.
 
     :param file_folder_local: str. The local folder containing files to upload.
     :param regex: str. The regex pattern to match the files.
     :param bucket: str. The name of the S3 bucket.
-    :param bucket_prefix: str. The prefix of the S3 bucket to upload files.
+    :param bucket_prefix: str or None. The prefix of the S3 bucket to upload files.
     :param file_subfolder_local: str. The local subfolder containing files to upload (optional).
     """
     s3 = boto3.client('s3')
     file_folder_local = os.path.join(file_folder_local, file_subfolder_local) if file_subfolder_local else file_folder_local
     file_paths = scan_files_including_regex(file_folder_local, regex, option='path')
+    
     if file_paths:
         print(f'Found {len(file_paths)} files in {file_folder_local} that match the regex pattern.')
     else:
         print(f'No files found in {file_folder_local} that match the regex pattern.')
         return 
+    
     for file_path in file_paths:
         file_name = os.path.basename(file_path)
-        bucket_prefix_with_slash = bucket_prefix + '/' if bucket_prefix[-1] != '/' else bucket_prefix
-        s3_key = os.path.join(bucket_prefix_with_slash, file_name)
+        # Handle None or empty bucket_prefix
+        if bucket_prefix:
+            bucket_prefix_with_slash = bucket_prefix + '/' if not bucket_prefix.endswith('/') else bucket_prefix
+            s3_key = os.path.join(bucket_prefix_with_slash, file_name)
+        else:
+            s3_key = file_name
+
         s3.upload_file(file_path, bucket, s3_key)
         print(f'Uploaded {file_path} to s3://{bucket}/{s3_key}')
     return None
 
-import boto3
-import pandas as pd
-import io
-import re
-from botocore.exceptions import NoCredentialsError, PartialCredentialsError
-
-def scan_files_in_bucket_by_regex(bucket, bucket_prefix, regex, option='key'):
-    """
-    Scan files in an S3 bucket that match a given regex pattern.
-
-    :param bucket: str. The name of the S3 bucket.
-    :param bucket_prefix: str. The prefix of the S3 bucket to scan.
-    :param regex: str. The regex pattern to match the files.
-    :param option: str. 'name' to return file names, 'key' to return full paths.
-    :return: list. A list of matching files.
-    """
-    s3 = boto3.client('s3')
-    bucket_prefix_with_slash = bucket_prefix + '/' if bucket_prefix and bucket_prefix[-1] != '/' else bucket_prefix
-    pattern = re.compile(regex)
-    try:
-        paginator = s3.get_paginator('list_objects_v2')
-        page_iterator = paginator.paginate(Bucket=bucket, Prefix=bucket_prefix_with_slash)
-        files = []
-        for page in page_iterator:
-            if 'Contents' in page:
-                for file in page['Contents']:
-                    if pattern.search(file['Key']) and file['Key'] != bucket_prefix_with_slash:
-                        files.append(file['Key'])
-        if files:
-            mapping_option = {
-                'name': [file.split('/')[-1] for file in files],
-                'key': files
-            }
-            try:
-                files = mapping_option[option]
-            except KeyError:
-                print(f"Invalid option '{option}'. Available options: {', '.join(mapping_option.keys())}")
-                return []
-
-            print(f"Files matching the regex '{regex}' in the bucket '{bucket}' with prefix '{bucket_prefix}':")
-            for file in files:
-                print('-', file)
-            return files
-        else:
-            print(f"No files matching the regex '{regex}' found in the bucket '{bucket}' with prefix '{bucket_prefix}'")
-            return []
-
-    except NoCredentialsError:
-        print("Credentials not available.")
-        return []
-    except PartialCredentialsError:
-        print("Incomplete credentials provided.")
-        return []
-    except Exception as e:
-        print(f"An error occurred: {e}")
-        return []
 
 def open_df_in_bucket(bucket, bucket_prefix=None, file_name=None, file_key=None):
     """
@@ -199,6 +170,7 @@ def open_df_in_bucket(bucket, bucket_prefix=None, file_name=None, file_key=None)
         print(f"Error reading file {file_path}: {str(e)}")
         return None
 
+
 def open_df_in_bucket_by_regex(bucket, bucket_prefix, regex, index=-1):
     """
     Read a CSV file from an S3 bucket that matches a given regex pattern and return it as a pandas DataFrame.
@@ -209,11 +181,12 @@ def open_df_in_bucket_by_regex(bucket, bucket_prefix, regex, index=-1):
     :param index: int. The index of the file to read from the list of matching files.
     :return: pandas.DataFrame. The DataFrame containing the file data.
     """
-    bucket_prefix_with_slash = bucket_prefix + '/' if bucket_prefix[-1] != '/' else bucket_prefix
+    bucket_prefix_with_slash = bucket_prefix + '/' if bucket_prefix and bucket_prefix[-1] != '/' else bucket_prefix
     file_keys = scan_files_in_bucket_by_regex(bucket=bucket, bucket_prefix=bucket_prefix_with_slash, regex=regex, option='key')
     file_key = file_keys[index]
     df = open_df_in_bucket(bucket, file_key=file_key)
     return df
+
 
 def relocate_files_between_buckets(source_bucket, target_bucket, regex, source_prefix='', target_prefix='', option='copy'):
     """
@@ -248,6 +221,7 @@ def relocate_files_between_buckets(source_bucket, target_bucket, regex, source_p
         except Exception as e:
             print(f'Failed to {option} file {key}: {e}')
 
+
 def copy_files_including_regex_between_s3_buckets(source_bucket, target_bucket, regex, source_prefix='', target_prefix=''):
     """
     Copy files between S3 buckets based on a regex pattern.
@@ -261,6 +235,7 @@ def copy_files_including_regex_between_s3_buckets(source_bucket, target_bucket, 
     relocate_files_between_buckets(source_bucket, target_bucket, regex, source_prefix, target_prefix, option='copy')
     return None
 
+
 def move_files_including_regex_between_s3_buckets(source_bucket, target_bucket, regex, source_prefix='', target_prefix=''):
     """
     Move files between S3 buckets based on a regex pattern.
@@ -273,6 +248,7 @@ def move_files_including_regex_between_s3_buckets(source_bucket, target_bucket, 
     """
     relocate_files_between_buckets(source_bucket, target_bucket, regex, source_prefix, target_prefix, option='move')
     return None
+
 
 def create_subfolder_in_bucket(bucket, bucket_subfolder):
     """
