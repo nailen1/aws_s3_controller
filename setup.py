@@ -31,8 +31,4 @@ setup(
     ],
     python_requires='>=3.7',
     keywords='aws s3 storage file-management data-processing',
-    license='MIT',
-    package_data={
-        'aws_s3_controller': ['LICENSE', 'README.md'],
-    },
 )
