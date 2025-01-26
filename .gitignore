@@ -92,6 +92,7 @@ env/
 
 # Spyder project settings
 .spyderproject
+.windsurfrules
 
 # Rope project settings
 .ropeproject
@@ -109,3 +110,6 @@ dmypy.json
 
 # Profiling data
 .prof
+
+.doc/
+commands-pypi.md
