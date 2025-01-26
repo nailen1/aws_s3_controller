@@ -2,14 +2,14 @@ from setuptools import setup, find_packages
 
 setup(
     name='aws_s3_controller',
-    version='0.6.0',
+    version='0.6.1',
     packages=find_packages(),
     install_requires=[
         'boto3>=1.26.0',
         'python-dotenv>=1.0.0',
         'pandas>=1.3.0',
         'xlrd>=2.0.1',
-        'shining_pebbles>=0.3.0',
+        'shining_pebbles',
     ],
     author='June Young Park',
     author_email='juneyoungpaak@gmail.com',
