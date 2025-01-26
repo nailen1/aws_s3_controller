@@ -4,8 +4,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 logger.info("aws_s3_controller package initialized")
 
-from .s3_file_control_utils import *
-
 from .s3_scanner import (
     scan_files_in_bucket_by_regex,
     scan_files_including_regex
@@ -34,6 +32,8 @@ from .s3_special_operations import (
     locate_menu_datasets_from_s3_to_ec2web,
     merge_timeseries_csv_files
 )
+
+from .alias import *
 
 import sys
 import inspect
