@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='aws_s3_controller',
-    version='0.6.4',
+    version='0.7.0',
     packages=find_packages(),
     install_requires=[
         'boto3>=1.26.0',
@@ -13,7 +13,7 @@ setup(
     ],
     author='June Young Park',
     author_email='juneyoungpaak@gmail.com',
-    description='A comprehensive Python module for efficient management and interaction with AWS S3 buckets.',
+    description='A collection of natural language-like utility functions to intuitively and easily control AWS\'s cloud object storage resource, S3.',
     long_description=open('README.md').read(),
     long_description_content_type='text/markdown',
     url='https://github.com/nailen1/aws_s3_controller.git',
