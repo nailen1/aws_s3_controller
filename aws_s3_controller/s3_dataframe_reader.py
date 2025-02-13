@@ -36,6 +36,8 @@ def open_df_in_bucket(bucket, bucket_prefix=None, file_name=None, file_key=None)
     try:
         content = s3.get_object(Bucket=bucket, Key=file_path)['Body'].read()        
         df = pd.read_csv(io.BytesIO(content))
+        # index_name = df.columns[0]
+        # df = df.set_index(index_name, drop=True)
         
         print(f"Successfully read file: {file_path}")
         print(f"DataFrame shape: {df.shape}")

@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='aws_s3_controller',
-    version='0.7.1',
+    version='0.7.2',
     packages=find_packages(),
     install_requires=[
         'boto3>=1.26.0',
