@@ -10,6 +10,7 @@ setup(
         'pandas>=1.3.0',
         'xlrd>=2.0.1',
         'shining_pebbles',
+        'string_date_controller>=0.1.1'
     ],
     author='June Young Park',
     author_email='juneyoungpaak@gmail.com',

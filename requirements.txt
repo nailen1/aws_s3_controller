@@ -8,3 +8,4 @@ flake8>=6.1.0
 mypy>=1.5.0
 shining_pebbles
 xlrd>=2.0.1
+string_date_controller>=0.1.1

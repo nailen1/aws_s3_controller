@@ -1,6 +1,10 @@
 # AWS S3 Controller
 
-A Python module for efficient management and interaction with AWS S3 buckets. This module provides a comprehensive set of tools for file operations, data handling, and bucket management.
+A collection of natural language-like utility functions to intuitively and easily control AWS's cloud object storage resource, S3.
+
+- Control S3. Manage, interact with, and handle S3 just like your local storage.
+- *AWS: Amazon Web Services  
+  *S3: Simple Storage Service in AWS
 
 ## Features
 
@@ -96,18 +100,12 @@ df = open_excel_in_bucket(
 
 1. Create a `.env` file in your project root
 2. Add your AWS credentials:
+
 ```
 AWS_ACCESS_KEY_ID=your_access_key
 AWS_SECRET_ACCESS_KEY=your_secret_key
 AWS_DEFAULT_REGION=your_region
 ```
-
-## Documentation
-
-Detailed documentation is available in the `doc` directory:
-- `design.md`: Project design documentation
-- `context.md`: Project context and progress
-- `commands-cascade.md`: Command history and functionality
 
 ## Contributing
 
@@ -117,6 +115,14 @@ Detailed documentation is available in the `doc` directory:
 4. Push to your branch
 5. Create a Pull Request
 
-## License
+## Author
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+**June Young Park**  
+AI Management Development Team Lead & Quant Strategist at LIFE Asset Management
+
+LIFE Asset Management is a hedge fund management firm that integrates value investing and engagement strategies with quantitative approaches and financial technology, headquartered in Seoul, South Korea.
+
+## Contact
+
+- Email: juneyoungpaak@gmail.com
+- Location: TWO IFC, Yeouido, Seoul

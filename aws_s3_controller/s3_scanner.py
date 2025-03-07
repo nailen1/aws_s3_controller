@@ -6,7 +6,7 @@ import re
 import os
 from .aws_connector import S3_WITHOUT_CREDENTIALS
 from botocore.exceptions import NoCredentialsError, PartialCredentialsError
-
+from string_date_controller import extract_date_ref_from_file_name
 
 def scan_files_in_bucket_by_regex(bucket, bucket_prefix, regex, option='key'):
     """
@@ -66,23 +66,19 @@ def scan_files_in_bucket_by_regex(bucket, bucket_prefix, regex, option='key'):
     return files
 
 
-def scan_files_including_regex(file_folder, regex, option="name"):
+def extract_dates_ref_in_bucket(bucket, bucket_prefix, regex, option_dashed=True):
     """
-    Scan local directory for files matching a regex pattern.
+    Extracts date references from file names in an S3 bucket.
 
     Args:
-        file_folder (str): Path to the directory to scan.
+        bucket (str): Name of the S3 bucket.
+        bucket_prefix (str): Prefix path within the bucket to limit the search scope.
         regex (str): Regular expression pattern to match against file names.
-        option (str, optional): Return format option. Either 'name' for file names or 'path' for full file paths. Defaults to 'name'.
 
     Returns:
-        list: Sorted list of matching file names or paths, depending on the option parameter.
+        list: List of extracted date references in dashed format (YYYY-MM-DD).
     """
-    with os.scandir(file_folder) as files:
-        lst = [file.name for file in files if re.findall(regex, file.name)]
-    mapping = {
-        "name": lst,
-        "path": [os.path.join(file_folder, file_name) for file_name in lst],
-    }
-    lst_ordered = sorted(mapping[option])
-    return lst_ordered
+    file_names = scan_files_in_bucket_by_regex(bucket=bucket, bucket_prefix=bucket_prefix, regex=regex, option='name')
+    dates_ref_existing = [extract_date_ref_from_file_name(file_name, option_dashed=option_dashed) for file_name in file_names]
+    return dates_ref_existing
+
